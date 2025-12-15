@@ -1,0 +1,75 @@
+{
+  "name": "nexus-radio",
+  "displayName": "Nexus Radio",
+  "description": "Radio Cyberpunk para programadores",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.107.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+"contributes": {
+    "commands": [
+      {
+        "command": "nexus-radio.play",
+        "title": "Nexus Radio: Play / Change Station"
+      },
+      {
+        "command": "nexus-radio.stop",
+        "title": "Nexus Radio: Stop"
+      }
+    ],
+    "configuration": {
+      "title": "Nexus Radio",
+      "properties": {
+        "nexusRadio.transitionDuration": {
+          "type": "number",
+          "default": 1.5,
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Tiempo de transición (crossfade) en segundos."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "nexus-radio-container",
+          "title": "Nexus Radio",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "nexus-radio-container": [
+        {
+          "type": "webview",
+          "id": "nexusRadio.sidebarView",
+          "name": "Panel de Control",
+          "icon": "media/icon.svg"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.107.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "typescript-eslint": "^8.48.1",
+    "eslint": "^9.39.1",
+    "typescript": "^5.9.3",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}
