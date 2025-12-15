@@ -9,7 +9,12 @@ let currentStationData: Station | undefined;
 let statusBarItem: vscode.StatusBarItem;
 let sidebarProvider: SidebarProvider;
 
-// Constante de animación (25Hz)
+// CRONÓMETRO VITAL (El Doctor)
+let heartbeatTimeout: NodeJS.Timeout | undefined;
+
+// ESTADO DE PAUSA (Para evitar falsos positivos del Doctor)
+let isManuallyPaused = false;
+
 const TICK_RATE_MS = 40; 
 
 export function activate(context: vscode.ExtensionContext) {
@@ -17,7 +22,6 @@ export function activate(context: vscode.ExtensionContext) {
     statusBarItem.command = 'nexus-radio.play';
     context.subscriptions.push(statusBarItem);
 
-    // 1. INICIALIZAMOS EL PANEL
     sidebarProvider = new SidebarProvider(context.extensionUri);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(
@@ -26,7 +30,7 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    // --- COMANDOS PÚBLICOS ---
+    // --- COMANDOS ---
     let cmdPlay = vscode.commands.registerCommand('nexus-radio.play', () => {
         const picker = vscode.window.createQuickPick<Station>();
         picker.items = STATIONS;
@@ -53,7 +57,6 @@ export function activate(context: vscode.ExtensionContext) {
         updateStatusBar("off");
     });
 
-    // --- COMANDOS INTERNOS (Webview) ---
     let cmdPlayId = vscode.commands.registerCommand('nexus-radio.playById', (id: string) => {
         const station = STATIONS.find(s => s.id === id);
         if (station) {
@@ -82,7 +85,6 @@ export function activate(context: vscode.ExtensionContext) {
 
     context.subscriptions.push(cmdPlay, cmdStop, cmdPlayId, cmdVolume, cmdFade, cmdToggle);
 
-    // ESCUDO ANTI-ZOMBIES
     context.subscriptions.push({
         dispose: () => {
             killCurrentStation(true);
@@ -93,9 +95,16 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 function killCurrentStation(intentional: boolean) {
+    // Apagamos el monitor cardíaco inmediatamente
+    if (heartbeatTimeout) {
+        clearTimeout(heartbeatTimeout);
+        heartbeatTimeout = undefined;
+    }
+    isManuallyPaused = false; // Reset de estado
+
     if (currentStation) {
         if (intentional) {currentStation.kill();}
-        else {currentStation.kill();} 
+        else {currentStation.kill();}
         
         currentStation = undefined;
         if (intentional) {currentStationData = undefined;}
@@ -103,7 +112,6 @@ function killCurrentStation(intentional: boolean) {
 }
 
 async function crossfadeTransition(station: Station) {
-    // Gradiente al estado de carga
     updateStatusBar("loading", "Sintonizando...", undefined, station.label, station.gradient);
 
     const config = vscode.workspace.getConfiguration('nexusRadio');
@@ -113,25 +121,47 @@ async function crossfadeTransition(station: Station) {
     const volumeStep = 100 / totalSteps;
 
     const newRadio = new MpvController();
+    isManuallyPaused = false; // Nace reproduciendo
 
+    // 1. METADATA
     newRadio.onMetadataChange((songTitle) => {
         if (!songTitle || songTitle.trim() === "-") {return;}
         if (currentStation === newRadio) {
-            // Gradiente al actualizar canción
             updateStatusBar("playing", station.label, songTitle, undefined, station.gradient);
         }
     });
 
+    // 2. DETECTOR DE PAUSA (La solución inteligente)
+    newRadio.onPauseChange((paused) => {
+        if (currentStation !== newRadio) {return;}
+
+        isManuallyPaused = paused;
+
+        if (paused) {
+            // SI PAUSAMOS: Dormimos al Doctor y actualizamos UI
+            if (heartbeatTimeout) {clearTimeout(heartbeatTimeout);}
+            // Enviamos estado 'paused' para que el panel cambie el icono
+            updateStatusBar("paused", station.label, "Pausado", undefined, station.gradient);
+        } else {
+            // SI REANUDAMOS: Despertamos al Doctor
+            startHeartbeatMonitor(newRadio, station);
+            // Recuperamos el estado 'playing'
+            updateStatusBar("playing", station.label, "Reanudando...", undefined, station.gradient);
+        }
+    });
+
+    // 3. MONITOR DE LATIDOS (El Doctor)
+    newRadio.onHeartbeat(() => {
+        // Solo monitoreamos si NO está pausado manualmente
+        if (!isManuallyPaused && currentStation === newRadio) {
+            startHeartbeatMonitor(newRadio, station);
+        }
+    });
+
+    // 4. MUERTE SÚBITA
     newRadio.onUnexpectedExit((code) => {
         if (currentStation === newRadio) {
-            console.warn(`Nexus Alert: Señal perdida. Reconectando...`);
-            // Gradiente al reconectar
-            updateStatusBar("loading", station.label, "Reconectando señal...", undefined, station.gradient);
-            setTimeout(() => {
-                if (currentStation === newRadio) {
-                    crossfadeTransition(station);
-                }
-            }, 2000);
+            triggerResurrection(station);
         }
     });
 
@@ -143,13 +173,15 @@ async function crossfadeTransition(station: Station) {
         return;
     }
 
+    if (heartbeatTimeout) {clearTimeout(heartbeatTimeout);}
+
     const oldRadio = currentStation;
     currentStation = newRadio;
     currentStationData = station; 
     
-    // Gradiente al estado de buffering
     updateStatusBar("playing", station.label, "Buffering...", undefined, station.gradient);
 
+    // Crossfade Loop
     let currentStep = 0;
     const interval = setInterval(() => {
         currentStep++;
@@ -169,19 +201,42 @@ async function crossfadeTransition(station: Station) {
     }, TICK_RATE_MS);
 }
 
-// --- ACTUALIZADA PARA ACEPTAR GRADIENTE ---
+// Helper para iniciar/reiniciar el temporizador de muerte
+function startHeartbeatMonitor(radio: MpvController, station: Station) {
+    if (heartbeatTimeout) {clearTimeout(heartbeatTimeout);}
+    
+    heartbeatTimeout = setTimeout(() => {
+        // Si entramos aquí, pasaron 10 segundos sin latidos Y no estaba pausado
+        console.warn(`Nexus Doctor: Paro cardíaco en ${station.label}.`);
+        triggerResurrection(station);
+    }, 10000);
+}
+
+function triggerResurrection(station: Station) {
+    if (heartbeatTimeout) {clearTimeout(heartbeatTimeout);}
+    updateStatusBar("loading", station.label, "Señal inestable (Reconectando...)", undefined, station.gradient);
+    
+    if (currentStation) {currentStation.kill();}
+    // Reintentamos en 2s
+    setTimeout(() => {
+        crossfadeTransition(station);
+    }, 2000);
+}
+
+// Actualizada para manejar estado "paused"
 function updateStatusBar(
-    status: "playing" | "off" | "loading", 
+    status: "playing" | "off" | "loading" | "paused", // <--- Aceptamos "paused"
     stationName?: string, 
     songInfo?: string,
     rawStationName?: string,
     gradient?: string
 ) {
     if (status === "playing") {
-        const displayText = songInfo 
-            ? `${stationName}  |  🎵 ${songInfo}` 
-            : `${stationName}`;
+        const displayText = songInfo ? `${stationName} | 🎵 ${songInfo}` : `${stationName}`;
         statusBarItem.text = `$(pulse) ${displayText}`;
+    } else if (status === "paused") {
+        // Icono de pausa en la barra inferior
+        statusBarItem.text = `$(debug-pause) ${stationName} (Pausado)`;
     } else if (status === "loading") {
         const displayText = songInfo ? `${stationName}: ${songInfo}` : stationName;
         statusBarItem.text = `$(sync~spin) ${displayText}`;
@@ -193,7 +248,7 @@ function updateStatusBar(
     if (sidebarProvider) {
         sidebarProvider.postMessage({
             type: 'status-update',
-            status: status,
+            status: status, // Enviamos "paused" o "playing" al frontend
             station: rawStationName || stationName || "Sin Señal",
             song: songInfo || "...",
             gradient: gradient || ""

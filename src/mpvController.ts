@@ -14,8 +14,11 @@ export class MpvController {
     
     private buffer: string = "";
     private metadataCallback: ((title: string) => void) | undefined;
-    
     private exitCallback: ((code: number | null) => void) | undefined;
+    private heartbeatCallback: (() => void) | undefined;
+    
+    // NUEVO: Callback para cambios de pausa
+    private pauseCallback: ((paused: boolean) => void) | undefined;
 
     constructor() {
         const id = Math.random().toString(36).substring(7);
@@ -32,10 +35,18 @@ export class MpvController {
         this.exitCallback = callback;
     }
 
+    public onHeartbeat(callback: () => void) {
+        this.heartbeatCallback = callback;
+    }
+
+    // NUEVO: Permite escuchar si el usuario pausó
+    public onPauseChange(callback: (paused: boolean) => void) {
+        this.pauseCallback = callback;
+    }
+
     public async spawn(url: string, startVolume: number): Promise<void> {
         return new Promise(async (resolve, reject) => {
             try {
-                // CAPA 1: BLINDAJE DE BUFFER Y RECONEXIÓN
                 const args = [
                     '--no-video',
                     `--input-ipc-server=${this.pipeName}`, 
@@ -43,17 +54,13 @@ export class MpvController {
                     '--cache=yes',
                     '--cache-secs=20',
                     '--loop-playlist=force',
-                    
                     url
                 ];
 
                 this.process = cp.spawn('mpv.com', args);
                 this.isAlive = true; 
 
-                // VIGILANTE: Detectamos si el proceso se cierra
                 this.process.on('close', (code) => {
-                    // Si 'isAlive' es true, significa que NO le dimos orden de morir.
-                    // Fue un accidente (caída de red grave o crash).
                     if (this.isAlive && this.exitCallback) {
                         this.exitCallback(code);
                     }
@@ -66,7 +73,6 @@ export class MpvController {
                         return;
                     }
                 }
-                // Si falla al nacer, marcamos como muerto para que no salte el detector de accidentes
                 this.isAlive = false; 
                 reject(new Error("No se pudo conectar al canal IPC"));
 
@@ -84,6 +90,9 @@ export class MpvController {
             client.on('connect', () => {
                 this.socket = client;
                 this.sendCommand(["observe_property", 1, "media-title"]);
+                this.sendCommand(["observe_property", 2, "time-pos"]);
+                // NUEVO: Observamos el estado de pausa (ID 3)
+                this.sendCommand(["observe_property", 3, "pause"]);
                 resolve(true);
             });
 
@@ -104,10 +113,28 @@ export class MpvController {
             if (!line.trim()) {continue;}
             try {
                 const json = JSON.parse(line);
-                if (json.event === 'property-change' && json.name === 'media-title') {
-                    const newTitle = json.data;
-                    if (this.metadataCallback && newTitle) {
-                        this.metadataCallback(newTitle);
+                
+                if (json.event === 'property-change') {
+                    
+                    if (json.name === 'media-title') {
+                        const newTitle = json.data;
+                        if (this.metadataCallback && newTitle) {
+                            this.metadataCallback(newTitle);
+                        }
+                    }
+                    
+                    if (json.name === 'time-pos') {
+                        if (this.heartbeatCallback) {
+                            this.heartbeatCallback();
+                        }
+                    }
+
+                    // NUEVO: Detectar cambio de pausa
+                    if (json.name === 'pause') {
+                        const isPaused = json.data === true;
+                        if (this.pauseCallback) {
+                            this.pauseCallback(isPaused);
+                        }
                     }
                 }
             } catch (e) {}
@@ -127,15 +154,11 @@ export class MpvController {
         this.sendCommand(["set_property", "volume", vol]);
     }
 
-    // Alternar Pausa/Reproducción
     public togglePause() {
-        // Enviamos el comando "cycle pause" a MPV
         this.sendCommand(["cycle", "pause"]);
     }
 
     public kill() {
-        // BAJAMOS LA BANDERA: "Esto es un asesinato intencional"
-        // Así el evento 'close' sabrá que no debe activar la alarma.
         this.isAlive = false;
         
         if (this.socket) {

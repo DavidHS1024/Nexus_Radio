@@ -1,6 +1,7 @@
 {
   "name": "nexus-radio",
   "displayName": "Nexus Radio",
+  "publisher": "Jhosuel Haro",
   "description": "Radio Cyberpunk para programadores",
   "version": "0.0.1",
   "engines": {

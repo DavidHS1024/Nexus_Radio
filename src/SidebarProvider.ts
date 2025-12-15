@@ -81,6 +81,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         `;
     }).join("");
 
+    // SVG Estáticos para carga inicial
     const playSvg = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
     const powerSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>`;
 
@@ -92,10 +93,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       
       <style>
-        /* REGLA DE ORO: Evita que el padding rompa el ancho */
-        * {
-            box-sizing: border-box;
-        }
+        * { box-sizing: border-box; }
 
         :root {
             --primary: #00f3ff;
@@ -111,11 +109,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             color: var(--vscode-editor-foreground);
             background: transparent;
             user-select: none;
-            overflow-x: hidden; /* Seguridad extra */
+            overflow-x: hidden;
             width: 100%;
         }
 
-        /* --- VISUALIZER ATMOSFÉRICO --- */
+        /* VISUALIZER */
         .visualizer-container {
             height: 120px;
             width: 100%;
@@ -133,16 +131,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             transition: border-color 0.5s ease;
         }
 
-        /* El fondo dinámico que cambia de color */
         .visualizer-bg {
             position: absolute;
             top: 0; left: 0; right: 0; bottom: 0;
-            opacity: 0; /* Invisible por defecto */
+            opacity: 0;
             transition: opacity 1s ease, background 1s ease;
             z-index: 0;
         }
 
-        /* Cuando está activo, el fondo aparece y "respira" */
         .visualizer-container.active .visualizer-bg {
             opacity: 0.8;
             animation: breathe 4s infinite alternate;
@@ -176,7 +172,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             text-shadow: 0 1px 5px rgba(0,0,0,0.8);
         }
 
-        /* --- CONTROLES --- */
+        /* CONTROLES */
         .controls-row {
             display: flex;
             gap: 10px;
@@ -210,13 +206,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         .btn-control svg { width: 20px; height: 20px; }
         .btn-off:hover { color: #ff4757; border-color: #ff4757; }
 
-        /* --- SLIDERS FIXED --- */
+        /* SLIDERS */
         .slider-section {
             background: var(--bg-glass);
             padding: 10px;
             border-radius: 8px;
             margin-bottom: 20px;
-            width: 100%; /* Asegura que no crezca más que el padre */
+            width: 100%;
         }
         .slider-row {
             display: flex;
@@ -226,17 +222,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             width: 100%;
         }
         
-        /* Fix crucial para input range */
         input[type=range] {
-            flex: 1; /* Ocupa el espacio restante */
-            width: 100%; /* Asegura ancho completo disponible */
-            min-width: 0; /* Permite encogerse en flexbox */
+            flex: 1;
+            width: 100%;
+            min-width: 0;
             accent-color: var(--primary);
             cursor: pointer;
-            margin: 0; /* Elimina margenes default del navegador */
+            margin: 0;
         }
 
-        /* --- GRID DE EMISORAS --- */
+        /* GRID */
         .station-list {
             display: flex;
             flex-direction: column;
@@ -266,7 +261,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         .icon-box {
             width: 36px;
             height: 36px;
-            min-width: 36px; /* Evita aplastamiento */
+            min-width: 36px;
             border-radius: 8px;
             display: flex;
             align-items: center;
@@ -278,7 +273,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         .station-info {
             display: flex;
             flex-direction: column;
-            overflow: hidden; /* Para textos largos */
+            overflow: hidden;
         }
 
         .station-name {
@@ -299,13 +294,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         <div class="visualizer-container" id="visualizer">
             <div class="visualizer-bg" id="vis-bg"></div>
-            
             <div class="now-playing-title" id="ui-station">NEXUS RADIO</div>
             <div class="now-playing-song" id="ui-song">System Ready</div>
         </div>
 
         <div class="controls-row">
-            <button class="btn-control" onclick="togglePlay()" title="Play / Pause">
+            <button id="btn-toggle" class="btn-control" onclick="togglePlay()" title="Play / Pause">
                 ${playSvg}
             </button>
             <button class="btn-control btn-off" onclick="stopRadio()" title="Apagar Sistema">
@@ -337,10 +331,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             const uiSong = document.getElementById('ui-song');
             const visualizer = document.getElementById('visualizer');
             const visBg = document.getElementById('vis-bg');
+            const btnToggle = document.getElementById('btn-toggle'); // Referencia al botón
             const volSlider = document.getElementById('vol-slider');
             const volText = document.getElementById('vol-val');
             const fadeSlider = document.getElementById('fade-slider');
             const fadeText = document.getElementById('fade-val');
+
+            // ICONOS DINÁMICOS
+            const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+            const ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
 
             window.addEventListener('message', event => {
                 const msg = event.data;
@@ -349,16 +348,22 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     if (msg.station) uiStation.innerText = msg.station;
                     if (msg.song) uiSong.innerText = msg.song;
 
-                    // Estado Visual
+                    // Estado Visual y Botones
                     if (msg.status === 'playing') {
                         visualizer.classList.add('active');
-                        // Inyectamos el gradiente recibido del backend
-                        if (msg.gradient) {
-                            visBg.style.background = msg.gradient;
-                        }
-                    } else {
+                        btnToggle.innerHTML = ICON_PAUSE; // Cambiar a Pausa
+                        
+                        if (msg.gradient) visBg.style.background = msg.gradient;
+                    } 
+                    else if (msg.status === 'paused') {
                         visualizer.classList.remove('active');
-                        uiSong.innerText = "Standby";
+                        btnToggle.innerHTML = ICON_PLAY; // Cambiar a Play
+                    }
+                    else {
+                        // Estado OFF o Loading
+                        visualizer.classList.remove('active');
+                        btnToggle.innerHTML = ICON_PLAY;
+                        if (msg.status === 'off') uiSong.innerText = "Standby";
                     }
                 }
             });
