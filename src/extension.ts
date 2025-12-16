@@ -9,6 +9,7 @@ let currentStationData: Station | undefined;
 let statusBarItem: vscode.StatusBarItem;
 let sidebarProvider: SidebarProvider;
 
+let resurrectionTimeout: NodeJS.Timeout | undefined;
 let heartbeatTimeout: NodeJS.Timeout | undefined;
 let isManuallyPaused = false;
 
@@ -92,15 +93,22 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 function killCurrentStation(intentional: boolean) {
+    // Matamos al Doctor (Heartbeat)
     if (heartbeatTimeout) {
         clearTimeout(heartbeatTimeout);
         heartbeatTimeout = undefined;
     }
+    // Matamos al Nigromante (Resurrección pendiente) <--- CORRECCIÓN CRÍTICA
+    if (resurrectionTimeout) {
+        clearTimeout(resurrectionTimeout);
+        resurrectionTimeout = undefined;
+    }
+
     isManuallyPaused = false;
 
     if (currentStation) {
         if (intentional) {currentStation.kill();}
-        else {currentStation.kill();} 
+        else {currentStation.kill();}
         
         currentStation = undefined;
         if (intentional) {currentStationData = undefined;}
@@ -119,14 +127,13 @@ async function crossfadeTransition(station: Station) {
     const newRadio = new MpvController();
     isManuallyPaused = false;
     
-    // Variables locales para el diagnóstico
     let isBuffering = false;
     let currentSongTitle = "Cargando...";
 
     // 1. METADATA
     newRadio.onMetadataChange((songTitle) => {
         if (!songTitle || songTitle.trim() === "-") {return;}
-        currentSongTitle = songTitle; // Guardamos el título para recuperarlo post-buffer
+        currentSongTitle = songTitle;
         if (currentStation === newRadio) {
             updateStatusBar("playing", station.label, songTitle, undefined, station.gradient);
         }
@@ -141,25 +148,21 @@ async function crossfadeTransition(station: Station) {
             if (heartbeatTimeout) {clearTimeout(heartbeatTimeout);}
             updateStatusBar("paused", station.label, "Pausado", undefined, station.gradient);
         } else {
-            // Al reanudar, usamos la lógica de buffering para decidir el timeout inicial
             startHeartbeatMonitor(newRadio, station, isBuffering);
             updateStatusBar("playing", station.label, currentSongTitle, undefined, station.gradient);
         }
     });
 
-    // 3. BUFFERING (NUEVO TRIAJE)
+    // 3. BUFFERING
     newRadio.onBufferChange((buffering) => {
         if (currentStation !== newRadio) {return;}
         isBuffering = buffering;
 
         if (buffering) {
-            // Entramos en zona de peligro (Internet lento) -> Damos 30s
             updateStatusBar("loading", station.label, "Buffering...", undefined, station.gradient);
             startHeartbeatMonitor(newRadio, station, true);
         } else {
-            // Salimos del peligro -> Volvemos a mostrar la canción
             updateStatusBar("playing", station.label, currentSongTitle, undefined, station.gradient);
-            // Volvemos a vigilancia estricta (3s)
             startHeartbeatMonitor(newRadio, station, false);
         }
     });
@@ -192,11 +195,26 @@ async function crossfadeTransition(station: Station) {
     currentStation = newRadio;
     currentStationData = station; 
     
+    // Si nace buffereando, lo marcamos (útil para el Smart Crossfade)
+    // Asumimos buffering inicial hasta recibir el primer evento o latido
+    isBuffering = true; 
     updateStatusBar("playing", station.label, "Buffering...", undefined, station.gradient);
 
-    // Crossfade
+    // --- SMART CROSSFADE LOOP ---
     let currentStep = 0;
     const interval = setInterval(() => {
+        // SEGURIDAD: Si la radio murió durante el fade, abortamos
+        if (!newRadio.isAlive) {
+            clearInterval(interval);
+            return;
+        }
+
+        // SMART PAUSE: Si está cargando, NO avanzamos el fade.
+        // Esperamos a que tenga datos para que la mezcla sea suave.
+        if (isBuffering) {
+            return; 
+        }
+
         currentStep++;
         let currentVol = currentStep * volumeStep;
         if (currentVol > 100) {currentVol = 100;}
@@ -214,12 +232,10 @@ async function crossfadeTransition(station: Station) {
     }, TICK_RATE_MS);
 }
 
-// DOCTOR INTELIGENTE
 function startHeartbeatMonitor(radio: MpvController, station: Station, isBuffering: boolean) {
     if (heartbeatTimeout) {clearTimeout(heartbeatTimeout);}
     
-    // SI ESTÁ BUFFERING: 30 Segundos de paciencia
-    // SI NO: 3 Segundos de paciencia (Muerte súbita)
+    // HLS necesita más paciencia (30s), un crash es rápido (3s)
     const tolerance = isBuffering ? 30000 : 3000;
 
     heartbeatTimeout = setTimeout(() => {
@@ -229,15 +245,24 @@ function startHeartbeatMonitor(radio: MpvController, station: Station, isBufferi
 }
 
 function triggerResurrection(station: Station) {
+    // Limpiamos cualquier intento previo
     if (heartbeatTimeout) {clearTimeout(heartbeatTimeout);}
-    // Cambiamos texto para que el usuario sepa que estamos actuando
+    if (resurrectionTimeout) {clearTimeout(resurrectionTimeout);}
+
+    // Solo resucitamos si el usuario NO ha matado la radio intencionalmente (currentStationData existe)
+    if (!currentStationData) {return;}
+
     updateStatusBar("loading", station.label, "Señal perdida (Reiniciando...)", undefined, station.gradient);
     
     if (currentStation) {currentStation.kill();}
     
-    setTimeout(() => {
-        crossfadeTransition(station);
-    }, 1000); // 1s de espera antes de reintentar
+    // Guardamos la referencia para poder cancelarla con el botón de Stop
+    resurrectionTimeout = setTimeout(() => {
+        // Doble verificación por seguridad
+        if (currentStationData) {
+            crossfadeTransition(station);
+        }
+    }, 1000);
 }
 
 function updateStatusBar(

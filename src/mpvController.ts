@@ -17,8 +17,6 @@ export class MpvController {
     private exitCallback: ((code: number | null) => void) | undefined;
     private heartbeatCallback: (() => void) | undefined;
     private pauseCallback: ((paused: boolean) => void) | undefined;
-    
-    // NUEVO: Callback para saber si estamos cargando (Buffering)
     private bufferStateCallback: ((isBuffering: boolean) => void) | undefined;
 
     constructor() {
@@ -44,7 +42,6 @@ export class MpvController {
         this.pauseCallback = callback;
     }
 
-    // NUEVO: Escuchar cambios de estado de carga
     public onBufferChange(callback: (isBuffering: boolean) => void) {
         this.bufferStateCallback = callback;
     }
@@ -52,13 +49,20 @@ export class MpvController {
     public async spawn(url: string, startVolume: number): Promise<void> {
         return new Promise(async (resolve, reject) => {
             try {
+                // CONFIGURACIÓN OPTIMIZADA PARA HLS (.m3u8)
                 const args = [
                     '--no-video',
                     `--input-ipc-server=${this.pipeName}`, 
                     `--volume=${startVolume}`,
+                    
+                    // Estrategia de Caché "Buckets"
                     '--cache=yes',
-                    '--cache-secs=20',
-                    '--loop-playlist=force',
+                    '--demuxer-max-bytes=10240KiB', 
+                    '--demuxer-readahead-secs=20',
+                    
+                    // VITAL: Evita que MPV se cierre si el stream corta momentáneamente
+                    '--keep-open=yes', 
+                    
                     url
                 ];
 
@@ -97,7 +101,6 @@ export class MpvController {
                 this.sendCommand(["observe_property", 1, "media-title"]);
                 this.sendCommand(["observe_property", 2, "time-pos"]);
                 this.sendCommand(["observe_property", 3, "pause"]);
-                // NUEVO: Observamos la propiedad clave para el diagnóstico
                 this.sendCommand(["observe_property", 4, "paused-for-cache"]);
                 resolve(true);
             });
@@ -142,7 +145,6 @@ export class MpvController {
                         }
                     }
 
-                    // NUEVO: Detectar si es buffering
                     if (json.name === 'paused-for-cache') {
                         const isBuffering = json.data === true;
                         if (this.bufferStateCallback) {
