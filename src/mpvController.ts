@@ -16,9 +16,10 @@ export class MpvController {
     private metadataCallback: ((title: string) => void) | undefined;
     private exitCallback: ((code: number | null) => void) | undefined;
     private heartbeatCallback: (() => void) | undefined;
-    
-    // NUEVO: Callback para cambios de pausa
     private pauseCallback: ((paused: boolean) => void) | undefined;
+    
+    // NUEVO: Callback para saber si estamos cargando (Buffering)
+    private bufferStateCallback: ((isBuffering: boolean) => void) | undefined;
 
     constructor() {
         const id = Math.random().toString(36).substring(7);
@@ -39,9 +40,13 @@ export class MpvController {
         this.heartbeatCallback = callback;
     }
 
-    // NUEVO: Permite escuchar si el usuario pausó
     public onPauseChange(callback: (paused: boolean) => void) {
         this.pauseCallback = callback;
+    }
+
+    // NUEVO: Escuchar cambios de estado de carga
+    public onBufferChange(callback: (isBuffering: boolean) => void) {
+        this.bufferStateCallback = callback;
     }
 
     public async spawn(url: string, startVolume: number): Promise<void> {
@@ -91,8 +96,9 @@ export class MpvController {
                 this.socket = client;
                 this.sendCommand(["observe_property", 1, "media-title"]);
                 this.sendCommand(["observe_property", 2, "time-pos"]);
-                // NUEVO: Observamos el estado de pausa (ID 3)
                 this.sendCommand(["observe_property", 3, "pause"]);
+                // NUEVO: Observamos la propiedad clave para el diagnóstico
+                this.sendCommand(["observe_property", 4, "paused-for-cache"]);
                 resolve(true);
             });
 
@@ -129,11 +135,18 @@ export class MpvController {
                         }
                     }
 
-                    // NUEVO: Detectar cambio de pausa
                     if (json.name === 'pause') {
                         const isPaused = json.data === true;
                         if (this.pauseCallback) {
                             this.pauseCallback(isPaused);
+                        }
+                    }
+
+                    // NUEVO: Detectar si es buffering
+                    if (json.name === 'paused-for-cache') {
+                        const isBuffering = json.data === true;
+                        if (this.bufferStateCallback) {
+                            this.bufferStateCallback(isBuffering);
                         }
                     }
                 }

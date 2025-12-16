@@ -9,10 +9,7 @@ let currentStationData: Station | undefined;
 let statusBarItem: vscode.StatusBarItem;
 let sidebarProvider: SidebarProvider;
 
-// CRONÓMETRO VITAL (El Doctor)
 let heartbeatTimeout: NodeJS.Timeout | undefined;
-
-// ESTADO DE PAUSA (Para evitar falsos positivos del Doctor)
 let isManuallyPaused = false;
 
 const TICK_RATE_MS = 40; 
@@ -95,16 +92,15 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 function killCurrentStation(intentional: boolean) {
-    // Apagamos el monitor cardíaco inmediatamente
     if (heartbeatTimeout) {
         clearTimeout(heartbeatTimeout);
         heartbeatTimeout = undefined;
     }
-    isManuallyPaused = false; // Reset de estado
+    isManuallyPaused = false;
 
     if (currentStation) {
         if (intentional) {currentStation.kill();}
-        else {currentStation.kill();}
+        else {currentStation.kill();} 
         
         currentStation = undefined;
         if (intentional) {currentStationData = undefined;}
@@ -121,44 +117,61 @@ async function crossfadeTransition(station: Station) {
     const volumeStep = 100 / totalSteps;
 
     const newRadio = new MpvController();
-    isManuallyPaused = false; // Nace reproduciendo
+    isManuallyPaused = false;
+    
+    // Variables locales para el diagnóstico
+    let isBuffering = false;
+    let currentSongTitle = "Cargando...";
 
     // 1. METADATA
     newRadio.onMetadataChange((songTitle) => {
         if (!songTitle || songTitle.trim() === "-") {return;}
+        currentSongTitle = songTitle; // Guardamos el título para recuperarlo post-buffer
         if (currentStation === newRadio) {
             updateStatusBar("playing", station.label, songTitle, undefined, station.gradient);
         }
     });
 
-    // 2. DETECTOR DE PAUSA (La solución inteligente)
+    // 2. PAUSA
     newRadio.onPauseChange((paused) => {
         if (currentStation !== newRadio) {return;}
-
         isManuallyPaused = paused;
 
         if (paused) {
-            // SI PAUSAMOS: Dormimos al Doctor y actualizamos UI
             if (heartbeatTimeout) {clearTimeout(heartbeatTimeout);}
-            // Enviamos estado 'paused' para que el panel cambie el icono
             updateStatusBar("paused", station.label, "Pausado", undefined, station.gradient);
         } else {
-            // SI REANUDAMOS: Despertamos al Doctor
-            startHeartbeatMonitor(newRadio, station);
-            // Recuperamos el estado 'playing'
-            updateStatusBar("playing", station.label, "Reanudando...", undefined, station.gradient);
+            // Al reanudar, usamos la lógica de buffering para decidir el timeout inicial
+            startHeartbeatMonitor(newRadio, station, isBuffering);
+            updateStatusBar("playing", station.label, currentSongTitle, undefined, station.gradient);
         }
     });
 
-    // 3. MONITOR DE LATIDOS (El Doctor)
+    // 3. BUFFERING (NUEVO TRIAJE)
+    newRadio.onBufferChange((buffering) => {
+        if (currentStation !== newRadio) {return;}
+        isBuffering = buffering;
+
+        if (buffering) {
+            // Entramos en zona de peligro (Internet lento) -> Damos 30s
+            updateStatusBar("loading", station.label, "Buffering...", undefined, station.gradient);
+            startHeartbeatMonitor(newRadio, station, true);
+        } else {
+            // Salimos del peligro -> Volvemos a mostrar la canción
+            updateStatusBar("playing", station.label, currentSongTitle, undefined, station.gradient);
+            // Volvemos a vigilancia estricta (3s)
+            startHeartbeatMonitor(newRadio, station, false);
+        }
+    });
+
+    // 4. HEARTBEAT
     newRadio.onHeartbeat(() => {
-        // Solo monitoreamos si NO está pausado manualmente
         if (!isManuallyPaused && currentStation === newRadio) {
-            startHeartbeatMonitor(newRadio, station);
+            startHeartbeatMonitor(newRadio, station, isBuffering);
         }
     });
 
-    // 4. MUERTE SÚBITA
+    // 5. CRASH
     newRadio.onUnexpectedExit((code) => {
         if (currentStation === newRadio) {
             triggerResurrection(station);
@@ -181,7 +194,7 @@ async function crossfadeTransition(station: Station) {
     
     updateStatusBar("playing", station.label, "Buffering...", undefined, station.gradient);
 
-    // Crossfade Loop
+    // Crossfade
     let currentStep = 0;
     const interval = setInterval(() => {
         currentStep++;
@@ -201,31 +214,34 @@ async function crossfadeTransition(station: Station) {
     }, TICK_RATE_MS);
 }
 
-// Helper para iniciar/reiniciar el temporizador de muerte
-function startHeartbeatMonitor(radio: MpvController, station: Station) {
+// DOCTOR INTELIGENTE
+function startHeartbeatMonitor(radio: MpvController, station: Station, isBuffering: boolean) {
     if (heartbeatTimeout) {clearTimeout(heartbeatTimeout);}
     
+    // SI ESTÁ BUFFERING: 30 Segundos de paciencia
+    // SI NO: 3 Segundos de paciencia (Muerte súbita)
+    const tolerance = isBuffering ? 30000 : 3000;
+
     heartbeatTimeout = setTimeout(() => {
-        // Si entramos aquí, pasaron 10 segundos sin latidos Y no estaba pausado
-        console.warn(`Nexus Doctor: Paro cardíaco en ${station.label}.`);
+        console.warn(`Nexus Doctor: Signos vitales perdidos en ${station.label} (Buffering: ${isBuffering}).`);
         triggerResurrection(station);
-    }, 10000);
+    }, tolerance);
 }
 
 function triggerResurrection(station: Station) {
     if (heartbeatTimeout) {clearTimeout(heartbeatTimeout);}
-    updateStatusBar("loading", station.label, "Señal inestable (Reconectando...)", undefined, station.gradient);
+    // Cambiamos texto para que el usuario sepa que estamos actuando
+    updateStatusBar("loading", station.label, "Señal perdida (Reiniciando...)", undefined, station.gradient);
     
     if (currentStation) {currentStation.kill();}
-    // Reintentamos en 2s
+    
     setTimeout(() => {
         crossfadeTransition(station);
-    }, 2000);
+    }, 1000); // 1s de espera antes de reintentar
 }
 
-// Actualizada para manejar estado "paused"
 function updateStatusBar(
-    status: "playing" | "off" | "loading" | "paused", // <--- Aceptamos "paused"
+    status: "playing" | "off" | "loading" | "paused", 
     stationName?: string, 
     songInfo?: string,
     rawStationName?: string,
@@ -235,7 +251,6 @@ function updateStatusBar(
         const displayText = songInfo ? `${stationName} | 🎵 ${songInfo}` : `${stationName}`;
         statusBarItem.text = `$(pulse) ${displayText}`;
     } else if (status === "paused") {
-        // Icono de pausa en la barra inferior
         statusBarItem.text = `$(debug-pause) ${stationName} (Pausado)`;
     } else if (status === "loading") {
         const displayText = songInfo ? `${stationName}: ${songInfo}` : stationName;
@@ -248,7 +263,7 @@ function updateStatusBar(
     if (sidebarProvider) {
         sidebarProvider.postMessage({
             type: 'status-update',
-            status: status, // Enviamos "paused" o "playing" al frontend
+            status: status,
             station: rawStationName || stationName || "Sin Señal",
             song: songInfo || "...",
             gradient: gradient || ""
