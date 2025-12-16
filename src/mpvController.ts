@@ -55,13 +55,14 @@ export class MpvController {
                     `--input-ipc-server=${this.pipeName}`, 
                     `--volume=${startVolume}`,
                     
-                    // Estrategia de Caché "Buckets"
-                    '--cache=yes',
-                    '--demuxer-max-bytes=10240KiB', 
-                    '--demuxer-readahead-secs=20',
+                    // --idle=yes: LA CLAVE. Evita que se cierre si falla la conexión inicial
+                    '--idle=yes',
                     
-                    // VITAL: Evita que MPV se cierre si el stream corta momentáneamente
-                    '--keep-open=yes', 
+                    // Estrategia de Caché HLS
+                    '--cache=yes',
+                    '--demuxer-max-bytes=10240KiB', // 10MB Buffer
+                    
+                    // HLS (.m3u8) no necesita seekable ni readahead agresivo
                     
                     url
                 ];
