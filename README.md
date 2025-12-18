@@ -1,32 +1,75 @@
-# 💠 Nexus Radio
+# 📻 Nexus Radio
 
-**Tu banda sonora de código, integrada.**
-Nexus Radio es una extensión de VS Code diseñada para mantener tu *Flow State* intacto. Sintoniza las mejores estaciones de Synthwave, Lo-Fi y Cyberpunk directamente desde tu editor, con una interfaz visual reactiva y controles de grado profesional.
+**Focus via Frequency.**
+Una extensión de radio diseñada para mantener el *Flow State* de los programadores. Sintoniza las mejores frecuencias de Synthwave, Lo-Fi y Cyberpunk directamente desde VS Code, sin navegadores ni distracciones.
 
-![Nexus Radio Interface](https://raw.githubusercontent.com/davidhs1024/nexus-radio/main/media/preview.png)
+![Preview](media/preview.png)
 
 ## ✨ Características Principales
 
-* **🎧 8 Estaciones Curadas:** Desde el relax de *Chillsynth* hasta la energía de *Rekt FM*.
-* **🌌 Interfaz Visual Reactiva:** Un panel lateral con visualizador de gradientes dinámicos que respiran con la música.
-* **🛡️ Protocolo Heartbeat:** Sistema de auto-reconexión inteligente. Si tu internet parpadea, la música vuelve sola.
-* **🎚️ Crossfade de Audio:** Transiciones suaves de calidad de estudio entre emisoras.
-* **⚡ Rendimiento Nativo:** Utiliza `mpv` en segundo plano para un consumo de CPU casi nulo.
+* **🎧 Motor de Audio Híbrido:** Transmisión de alta fidelidad (320kbps) con reconexión inteligente.
+* **🔌 Zero Configuración (Nuevo en v0.0.4):** La extensión detecta, descarga y configura automáticamente el motor de audio necesario. ¡Solo instala y reproduce!
+* **🎚️ Smart Crossfade:** Transiciones suaves de estilo cinematográfico entre emisoras. Nada de cortes bruscos.
+* **⚡ Ligero y Nativo:** Funciona en segundo plano sin consumir recursos de la interfaz de VS Code.
+* **📡 8 Emisoras Especializadas:** Curadas por la comunidad de Nightride FM.
+
+## 🎶 Frecuencias Disponibles
+
+| Emisora | Género / Vibe |
+| :--- | :--- |
+| **Nightride FM** | Synthwave Classics (The OG) |
+| **Chillsynth** | Lo-Fi, Downtempo & Chillwave |
+| **Datawave** | Cyberpunk Focus & IDM |
+| **Spacesynth** | Sci-Fi Energy & Italo Disco |
+| **Darksynth** | Industrial, Aggressive & Heavy |
+| **EBSM** | Dark Clubbing & EBM |
+| **Horror** | Spooky Ambient & Witch House |
+| **Rekt FM** | Drum & Bass / Jungle |
 
 ## 🚀 Cómo Usar
 
-1.  Abre la Paleta de Comandos (`Ctrl+Shift+P`) y escribe **Nexus Radio: Play**.
-2.  O haz clic en el icono de la **Torre de Radio** en la barra lateral.
-3.  ¡Disfruta!
+1.  Abre la **Barra Lateral** (Icono de Torre de Radio) o usa `Ctrl+Shift+P`.
+2.  Escribe/Selecciona **`Nexus Radio: Play`**.
+3.  Elige una emisora.
+4.  *(Solo la primera vez)*: Si no tienes el motor de audio, acepta la descarga automática.
 
-## 📦 Requisitos
+### Comandos Disponibles
+* `Nexus Radio: Play` - Abrir selector de emisoras.
+* `Nexus Radio: Stop` - Apagar la radio completamente.
+* `Nexus Radio: Toggle Pause` - Pausar/Reanudar.
+* `Nexus Radio: Set Volume` - Ajustar volumen (0-100).
 
-Esta extensión requiere tener **MPV** instalado en tu sistema para funcionar. La extensión intentará usar la versión instalada en tu PATH.
+## ⚙️ Requisitos
 
-* **Windows:** `winget install mpv` (o descarga portable).
-* **Linux:** `sudo apt install mpv`
-* **Mac:** `brew install mpv`
+**Ninguno.**
+A partir de la versión **0.0.4**, Nexus Radio incluye un gestor de dependencias inteligente.
+* Si ya tienes [MPV](https://mpv.io/) instalado en tu sistema, la extensión lo usará.
+* Si no lo tienes, la extensión descargará una versión portable y aislada automáticamente.
+
+*(Nota para usuarios de Linux: La instalación automática usa AppImage, asegúrate de tener las librerías base de tu distribución, como `libfuse2` en Ubuntu 22.04+).*
+
+## 🔧 Configuración Avanzada
+
+Puedes ajustar el comportamiento en `File > Preferences > Settings`:
+
+* `nexusRadio.transitionDuration`: Segundos que dura el efecto de desvanecimiento al cambiar de emisora (Default: `1.5`).
 
 ---
 
-**Creado por Jhosuel Haro** | *Code with Rhythm*
+## 🏗️ Release Notes
+
+### 0.0.4 (The Plug & Play Update)
+* **NEW:** Sistema de instalación automática de MPV. Ya no se requiere configuración manual del PATH.
+* Mejoras en la estabilidad del buffer para redes inestables.
+
+### 0.0.3
+* Corrección de iconos y branding en el Marketplace.
+
+### 0.0.2
+* Motor de audio reescrito con soporte HLS híbrido.
+* Implementación de "Smart Doctor" para resurrección de streams caídos.
+
+---
+
+**Enjoy the silence... or the synth.**
+*Desarrollado por Jhosuel Haro.*

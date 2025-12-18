@@ -9,6 +9,7 @@ export class MpvController {
     private process: cp.ChildProcess | undefined;
     private socket: net.Socket | undefined;
     private pipeName: string;
+    private customPath: string = "mpv";
     
     public isAlive: boolean = false;
     
@@ -19,7 +20,8 @@ export class MpvController {
     private pauseCallback: ((paused: boolean) => void) | undefined;
     private bufferStateCallback: ((isBuffering: boolean) => void) | undefined;
 
-    constructor() {
+    constructor(mpvPath?: string) {
+        if (mpvPath) {this.customPath = mpvPath;}
         const id = Math.random().toString(36).substring(7);
         this.pipeName = process.platform === 'win32' 
             ? `\\\\.\\pipe\\nexus-radio-${id}` 
@@ -67,7 +69,9 @@ export class MpvController {
                     url
                 ];
 
-                this.process = cp.spawn('mpv.com', args);
+                const executable = this.customPath;
+
+                this.process = cp.spawn(executable, args);
                 this.isAlive = true; 
 
                 this.process.on('close', (code) => {

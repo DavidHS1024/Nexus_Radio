@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { MpvController } from './mpvController';
 import { STATIONS, Station } from './stations';
 import { SidebarProvider } from './SidebarProvider';
+import { MpvInstaller } from './installer';
 
 // Estado Global
 let currentStation: MpvController | undefined;
@@ -12,10 +13,11 @@ let sidebarProvider: SidebarProvider;
 let resurrectionTimeout: NodeJS.Timeout | undefined;
 let heartbeatTimeout: NodeJS.Timeout | undefined;
 let isManuallyPaused = false;
+let mpvExecutablePath: string = "mpv";
 
 const TICK_RATE_MS = 40; 
 
-export function activate(context: vscode.ExtensionContext) {
+export async function activate(context: vscode.ExtensionContext) {
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     statusBarItem.command = 'nexus-radio.play';
     context.subscriptions.push(statusBarItem);
@@ -27,6 +29,17 @@ export function activate(context: vscode.ExtensionContext) {
             sidebarProvider
         )
     );
+
+    // --- CHECK DE INSTALACIÓN ---
+    const installer = new MpvInstaller(context);
+    const installedPath = await installer.checkAndInstall();
+
+    if (installedPath) {
+        mpvExecutablePath = installedPath;
+        console.log("Nexus Radio usando motor en:", mpvExecutablePath);
+    } else {
+        vscode.window.showWarningMessage("Nexus Radio: No se encontró MPV. La reproducción fallará.");
+    }
 
     // --- COMANDOS ---
     let cmdPlay = vscode.commands.registerCommand('nexus-radio.play', () => {
@@ -124,7 +137,7 @@ async function crossfadeTransition(station: Station) {
     const totalSteps = Math.ceil(durationMs / TICK_RATE_MS);
     const volumeStep = 100 / totalSteps;
 
-    const newRadio = new MpvController();
+    const newRadio = new MpvController(mpvExecutablePath);
     isManuallyPaused = false;
     
     let isBuffering = false;
